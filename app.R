@@ -11,11 +11,8 @@ app_name <- Sys.getenv("STRAVA_APP_NAME")
 client_id <- Sys.getenv("STRAVA_CLIENT_ID")
 client_secret <- Sys.getenv("STRAVA_CLIENT_SECRET")
 
-# Custom OAuth function with correct scopes - use the working version
+# Custom OAuth function with correct scopes
 strava_oauth <- function(app_name, client_id, client_secret, cache = TRUE) {
-  # Get the host URL from Posit Connect
-  host_url <- paste0("https://", Sys.getenv("CONNECT_APP_URL"))
-  
   httr::oauth2.0_token(
     endpoint = httr::oauth_endpoint(
       authorize = "https://www.strava.com/oauth/authorize",
@@ -24,11 +21,10 @@ strava_oauth <- function(app_name, client_id, client_secret, cache = TRUE) {
     app = httr::oauth_app(
       appname = app_name,
       key = client_id,
-      secret = client_secret,
-      redirect_uri = host_url  # Set the redirect URI to the Posit Connect URL
+      secret = client_secret
     ),
     scope = "activity:read_all,read,profile:read_all",
-    cache = cache
+    cache = FALSE  # Disable caching to avoid issues
   )
 }
 
