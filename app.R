@@ -13,6 +13,13 @@ client_secret <- Sys.getenv("STRAVA_CLIENT_SECRET")
 
 # Custom OAuth function with correct scopes - use the working version
 strava_oauth <- function(app_name, client_id, client_secret, cache = TRUE) {
+  # Get the current URL from the Shiny session
+  if (!is.null(getOption("shiny.host"))) {
+    redirect_uri <- sprintf("https://%s/", getOption("shiny.host"))
+  } else {
+    redirect_uri <- "http://localhost:1410/"
+  }
+  
   httr::oauth2.0_token(
     endpoint = httr::oauth_endpoint(
       authorize = "https://www.strava.com/oauth/authorize",
@@ -21,10 +28,11 @@ strava_oauth <- function(app_name, client_id, client_secret, cache = TRUE) {
     app = httr::oauth_app(
       appname = app_name,
       key = client_id,
-      secret = client_secret
+      secret = client_secret,
+      redirect_uri = redirect_uri  # Add the redirect URI here
     ),
     scope = "activity:read_all,read,profile:read_all",
-    cache = cache
+    cache = FALSE
   )
 }
 
