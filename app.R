@@ -35,7 +35,8 @@ strava_oauth <- function(session) {
     scope = "activity:read_all,read,profile:read_all",
     cache = FALSE,
     use_basic_auth = TRUE,
-    oob_value = base_url  # Explicitly set the out-of-band URL
+    use_oob = TRUE,  # Enable out-of-band authentication
+    oob_value = base_url
   )
   
   return(token)
