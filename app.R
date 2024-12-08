@@ -88,21 +88,33 @@ stravaEnv$fetch_strava_activities <- function() {
   
   url <- "https://www.strava.com/api/v3/athlete/activities"
   
-  # Make the API request with only header authentication
+  # Print debug information
+  message("Making API request with token: ", substr(access_token, 1, 10), "...")
+  
+  # Make the API request with modified headers
   response <- GET(
     url,
     add_headers(
-      `Authorization` = sprintf("Bearer %s", access_token)
+      "Authorization" = paste("Bearer", access_token),
+      "Accept" = "application/json"
     ),
     query = list(
-      per_page = 200
+      per_page = 200,
+      access_token = access_token  # Added explicit access token in query
     )
   )
   
+  # Print response details for debugging
+  message("API Response Status: ", status_code(response))
+  message("API Response Headers: ", toJSON(headers(response)))
+  
   # Handle response
   if (status_code(response) != 200) {
+    response_content <- rawToChar(response$content)
+    message("API Error Response Content: ", response_content)
+    
     content <- tryCatch(
-      fromJSON(rawToChar(response$content)),
+      fromJSON(response_content),
       error = function(e) NULL
     )
     error_msg <- if (!is.null(content$message)) content$message else "Unknown error"
@@ -115,6 +127,7 @@ stravaEnv$fetch_strava_activities <- function() {
     return(data.frame())
   }
   
+  # Rest of the function remains the same...
   df <- data.frame(
     date = as.Date(activities$start_date),
     type = activities$type,
