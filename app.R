@@ -11,68 +11,65 @@ app_name <- Sys.getenv("STRAVA_APP_NAME")
 client_id <- Sys.getenv("STRAVA_CLIENT_ID")
 client_secret <- Sys.getenv("STRAVA_CLIENT_SECRET")
 
-# Modified OAuth function for deployed environment
+# Modified OAuth function with refresh token handling
 strava_oauth <- function(session) {
-  # First, try to get token directly using client credentials
   token_url <- "https://www.strava.com/oauth/token"
   
+  # Exchange authorization code for access token
   response <- POST(
     url = token_url,
     body = list(
       client_id = client_id,
       client_secret = client_secret,
-      grant_type = "client_credentials"
+      refresh_token = Sys.getenv("STRAVA_REFRESH_TOKEN"),  # Add this to your environment variables
+      grant_type = "refresh_token"
     ),
-    encode = "json"
+    encode = "form"
   )
   
-  if (status_code(response) == 200) {
-    token_data <- fromJSON(rawToChar(response$content))
-    token <- Token2.0$new(
-      app = oauth_app(
-        appname = app_name,
-        key = client_id,
-        secret = client_secret
-      ),
-      endpoint = oauth_endpoint(
-        authorize = "https://www.strava.com/oauth/authorize",
-        access = "https://www.strava.com/oauth/token"
-      ),
-      credentials = list(
-        access_token = token_data$access_token,
-        token_type = "Bearer"
-      )
-    )
-    return(token)
-  } else {
-    # If client credentials flow fails, try alternative authentication
-    token <- oauth2.0_token(
-      endpoint = oauth_endpoint(
-        authorize = "https://www.strava.com/oauth/authorize",
-        access = "https://www.strava.com/oauth/token"
-      ),
-      app = oauth_app(
-        appname = app_name,
-        key = client_id,
-        secret = client_secret,
-        redirect_uri = "https://connect.posit.cloud"
-      ),
-      scope = "activity:read_all,read,profile:read_all",
-      cache = FALSE,
-      credentials = list(
-        grant_type = "authorization_code"
-      )
-    )
-    return(token)
+  if (status_code(response) != 200) {
+    stop("Failed to obtain access token")
   }
+  
+  token_data <- fromJSON(rawToChar(response$content))
+  
+  # Create a token object
+  token <- Token2.0$new(
+    app = oauth_app(
+      appname = app_name,
+      key = client_id,
+      secret = client_secret
+    ),
+    endpoint = oauth_endpoint(
+      authorize = "https://www.strava.com/oauth/authorize",
+      access = "https://www.strava.com/oauth/token"
+    ),
+    credentials = list(
+      access_token = token_data$access_token,
+      token_type = "Bearer",
+      expires_in = token_data$expires_in,
+      refresh_token = token_data$refresh_token
+    )
+  )
+  
+  return(token)
 }
 
-# Enhanced fetch_strava_activities function with better error handling
+# Modified fetch activities function with better error handling
 fetch_strava_activities <- function(token) {
   url <- "https://www.strava.com/api/v3/athlete/activities"
-  response <- GET(url, config(token = token), query = list(per_page = 200))
   
-  # More detailed error handling
+  # Ensure we're using the token correctly
+  headers <- add_headers(
+    Authorization = paste("Bearer", token$credentials$access_token)
+  )
+  
+  response <- GET(
+    url = url,
+    headers,
+    query = list(per_page = 200)
+  )
+  
   if (status_code(response) != 200) {
     error_content <- tryCatch(
       fromJSON(rawToChar(response$content)),
@@ -83,15 +80,8 @@ fetch_strava_activities <- function(token) {
                error_content$message))
   }
   
-  # Add error handling for JSON parsing
-  activities <- tryCatch(
-    fromJSON(rawToChar(response$content)),
-    error = function(e) {
-      stop("Failed to parse Strava response")
-    }
-  )
+  activities <- fromJSON(rawToChar(response$content))
   
-  # Check if activities is empty
   if (length(activities) == 0) {
     stop("No activities found in Strava response")
   }
@@ -99,9 +89,11 @@ fetch_strava_activities <- function(token) {
   df <- data.frame(
     date = as.Date(activities$start_date),
     type = activities$type,
-    country = ifelse(is.null(activities$location_country) | is.na(activities$location_country) | activities$location_country == "", 
-                     "Unknown", 
-                     activities$location_country),
+    country = ifelse(is.null(activities$location_country) | 
+                      is.na(activities$location_country) | 
+                      activities$location_country == "", 
+                    "Unknown", 
+                    activities$location_country),
     distance = activities$distance / 1000,
     duration = activities$moving_time / 60,
     elevation = activities$total_elevation_gain,
