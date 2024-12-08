@@ -12,52 +12,6 @@ client_id <- Sys.getenv("STRAVA_CLIENT_ID")
 client_secret <- Sys.getenv("STRAVA_CLIENT_SECRET")
 refresh_token <- Sys.getenv("STRAVA_REFRESH_TOKEN")
 
-# Function to get a fresh access token with improved error handling
-get_access_token <- function() {
-  token_url <- "https://www.strava.com/oauth/token"
-  
-  # Validate credentials
-  if (any(c(client_id, client_secret, refresh_token) == "")) {
-    stop("Missing Strava credentials. Check environment variables.")
-  }
-  
-  # Make the token refresh request
-  response <- POST(
-    url = token_url,
-    body = list(
-      client_id = client_id,
-      client_secret = client_secret,
-      refresh_token = refresh_token,
-      grant_type = "refresh_token",
-      scope = "activity:read_all,read_all,profile:read_all"  # Added required scopes
-    ),
-    encode = "form"
-  )
-  
-  # Handle response
-  if (status_code(response) != 200) {
-    content <- tryCatch(
-      fromJSON(rawToChar(response$content)),
-      error = function(e) NULL
-    )
-    error_msg <- if (!is.null(content$message)) content$message else "Unknown error"
-    stop(paste("Token refresh failed:", error_msg))
-  }
-  
-  content <- fromJSON(rawToChar(response$content))
-  
-  if (is.null(content$access_token)) {
-    stop("No access token in response")
-  }
-  
-  # Update refresh token if provided
-  if (!is.null(content$refresh_token)) {
-    refresh_token <<- content$refresh_token
-  }
-  
-  return(content$access_token)
-}
-
 # Function to fetch activities with improved error handling
 fetch_strava_activities <- function() {
   # Get fresh access token
@@ -65,21 +19,24 @@ fetch_strava_activities <- function() {
   
   url <- "https://www.strava.com/api/v3/athlete/activities"
   
-  # Make the API request with updated scopes
+  # Make the API request with only header authentication
   response <- GET(
     url,
     add_headers(
-      Authorization = paste("Bearer", access_token),
-      Accept = "application/json"
+      `Authorization` = sprintf("Bearer %s", access_token)  # Modified format
     ),
     query = list(
-      per_page = 200,
-      access_token = access_token  # Added explicit access token in query
+      per_page = 200  # Removed duplicate access token
     )
   )
   
   # Handle response
   if (status_code(response) != 200) {
+    # Print detailed error information for debugging
+    print(paste("Response status:", status_code(response)))
+    print(paste("Response headers:", toString(headers(response))))
+    print(paste("Response content:", rawToChar(response$content)))
+    
     content <- tryCatch(
       fromJSON(rawToChar(response$content)),
       error = function(e) NULL
@@ -94,7 +51,7 @@ fetch_strava_activities <- function() {
     return(data.frame())  # Return empty dataframe instead of error
   }
   
-  # Create activities dataframe with safer type conversion
+  # Rest of the function remains the same...
   df <- data.frame(
     date = as.Date(activities$start_date),
     type = activities$type,
