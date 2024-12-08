@@ -16,12 +16,17 @@ refresh_token <- Sys.getenv("STRAVA_REFRESH_TOKEN")
 get_access_token <- function() {
   token_url <- "https://www.strava.com/oauth/token"
   
+  # Print credential status for debugging
+  print(paste("Client ID length:", nchar(client_id)))
+  print(paste("Client Secret length:", nchar(client_secret)))
+  print(paste("Refresh Token length:", nchar(refresh_token)))
+  
   # Validate credentials
   if (any(c(client_id, client_secret, refresh_token) == "")) {
     stop("Missing Strava credentials. Check environment variables.")
   }
   
-  # Make the token refresh request
+  # Make the token refresh request with verbose output
   response <- POST(
     url = token_url,
     body = list(
@@ -30,20 +35,39 @@ get_access_token <- function() {
       refresh_token = refresh_token,
       grant_type = "refresh_token"
     ),
-    encode = "form"  # Changed to form encoding
+    encode = "form",
+    verbose()  # Add verbose output
   )
+  
+  # Print response status and headers for debugging
+  print(paste("Token response status:", status_code(response)))
+  print(paste("Token response headers:", toString(headers(response))))
   
   # Handle response
   if (status_code(response) != 200) {
     content <- tryCatch(
-      fromJSON(rawToChar(response$content)),
+      rawToChar(response$content),
+      error = function(e) "Could not read response content"
+    )
+    print(paste("Error response content:", content))
+    
+    parsed_content <- tryCatch(
+      fromJSON(content),
       error = function(e) NULL
     )
-    error_msg <- if (!is.null(content$message)) content$message else "Unknown error"
+    error_msg <- if (!is.null(parsed_content$message)) 
+      parsed_content$message else content
     stop(paste("Token refresh failed:", error_msg))
   }
   
   content <- fromJSON(rawToChar(response$content))
+  
+  # Print token response details (excluding sensitive info)
+  print("Token response received")
+  print(paste("Contains access_token:", !is.null(content$access_token)))
+  print(paste("Contains refresh_token:", !is.null(content$refresh_token)))
+  print(paste("Token type:", content$token_type))
+  print(paste("Expires at:", content$expires_at))
   
   if (is.null(content$access_token)) {
     stop("No access token in response")
@@ -52,6 +76,7 @@ get_access_token <- function() {
   # Update refresh token if provided
   if (!is.null(content$refresh_token)) {
     refresh_token <<- content$refresh_token
+    print("Updated refresh token")
   }
   
   return(content$access_token)
@@ -61,36 +86,49 @@ get_access_token <- function() {
 fetch_strava_activities <- function() {
   # Get fresh access token
   access_token <- get_access_token()
+  print(paste("Access token length:", nchar(access_token)))
   
   url <- "https://www.strava.com/api/v3/athlete/activities"
   
-  # Make the API request
+  # Make the API request with verbose output
   response <- GET(
     url,
     add_headers(
       Authorization = paste("Bearer", access_token),
       Accept = "application/json"
     ),
-    query = list(per_page = 200)
+    query = list(per_page = 200),
+    verbose()  # Add verbose output
   )
+  
+  # Print response details for debugging
+  print(paste("Activities response status:", status_code(response)))
+  print(paste("Activities response headers:", toString(headers(response))))
   
   # Handle response
   if (status_code(response) != 200) {
     content <- tryCatch(
-      fromJSON(rawToChar(response$content)),
+      rawToChar(response$content),
+      error = function(e) "Could not read response content"
+    )
+    print(paste("Error response content:", content))
+    
+    parsed_content <- tryCatch(
+      fromJSON(content),
       error = function(e) NULL
     )
-    error_msg <- if (!is.null(content$message)) content$message else "Unknown error"
+    error_msg <- if (!is.null(parsed_content$message)) 
+      parsed_content$message else content
     stop(paste("API request failed:", status_code(response), "Error:", error_msg))
   }
   
+  # Rest of the function remains the same...
   activities <- fromJSON(rawToChar(response$content))
   
   if (length(activities) == 0) {
-    return(data.frame())  # Return empty dataframe instead of error
+    return(data.frame())
   }
   
-  # Create activities dataframe with safer type conversion
   df <- data.frame(
     date = as.Date(activities$start_date),
     type = activities$type,
