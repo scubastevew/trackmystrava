@@ -13,9 +13,6 @@ client_secret <- Sys.getenv("STRAVA_CLIENT_SECRET")
 
 # Modified OAuth function for deployed environment
 strava_oauth <- function(session) {
-  # For connect.posit.cloud, we need the full content URL
-  base_url <- "https://connect.posit.cloud/scubastevew/content/0193a2ef-7b7b-d36d-9122-1fa0ede20220"
-  
   oauth_endpoint <- oauth_endpoint(
     authorize = "https://www.strava.com/oauth/authorize",
     access = "https://www.strava.com/oauth/token"
@@ -25,19 +22,32 @@ strava_oauth <- function(session) {
     appname = app_name,
     key = client_id,
     secret = client_secret,
-    redirect_uri = base_url
+    redirect_uri = "https://connect.posit.cloud"
   )
   
-  # Get OAuth token with specific configuration for Strava
-  token <- oauth2.0_token(
-    endpoint = oauth_endpoint,
-    app = oauth_app,
-    scope = "activity:read_all,read,profile:read_all",
-    cache = FALSE,
-    use_basic_auth = TRUE,
-    use_oob = TRUE,  # Enable out-of-band authentication
-    oob_value = base_url
-  )
+  # Handle both interactive and non-interactive sessions
+  if (interactive()) {
+    token <- oauth2.0_token(
+      endpoint = oauth_endpoint,
+      app = oauth_app,
+      scope = "activity:read_all,read,profile:read_all",
+      cache = FALSE,
+      use_basic_auth = TRUE,
+      use_oob = TRUE
+    )
+  } else {
+    # For non-interactive sessions (like Posit Connect)
+    token <- oauth2.0_token(
+      endpoint = oauth_endpoint,
+      app = oauth_app,
+      scope = "activity:read_all,read,profile:read_all",
+      cache = FALSE,
+      use_basic_auth = TRUE,
+      options = list(
+        auth_type = "client_credentials"
+      )
+    )
+  }
   
   return(token)
 }
