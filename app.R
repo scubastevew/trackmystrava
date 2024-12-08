@@ -30,26 +30,47 @@ strava_oauth <- function(session) {
     endpoint = oauth_endpoint,
     app = oauth_app,
     scope = "activity:read_all,read,profile:read_all",
-    cache = FALSE,
-    credentials = list(
-      client_id = client_id,
-      client_secret = client_secret
-    )
+    cache = FALSE
   )
+  
+  # Verify token immediately
+  test_url <- "https://www.strava.com/api/v3/athlete"
+  test_response <- GET(test_url, config(token = token))
+  if (status_code(test_response) != 200) {
+    stop("Token verification failed")
+  }
   
   return(token)
 }
 
-# Rest of your functions remain the same
+# Enhanced fetch_strava_activities function with better error handling
 fetch_strava_activities <- function(token) {
   url <- "https://www.strava.com/api/v3/athlete/activities"
   response <- GET(url, config(token = token), query = list(per_page = 200))
   
+  # More detailed error handling
   if (status_code(response) != 200) {
-    stop("Failed to fetch activities from Strava")
+    error_content <- tryCatch(
+      fromJSON(rawToChar(response$content)),
+      error = function(e) list(message = "Unknown error")
+    )
+    stop(paste("Failed to fetch activities from Strava:",
+               status_code(response),
+               error_content$message))
   }
   
-  activities <- fromJSON(rawToChar(response$content))
+  # Add error handling for JSON parsing
+  activities <- tryCatch(
+    fromJSON(rawToChar(response$content)),
+    error = function(e) {
+      stop("Failed to parse Strava response")
+    }
+  )
+  
+  # Check if activities is empty
+  if (length(activities) == 0) {
+    stop("No activities found in Strava response")
+  }
   
   df <- data.frame(
     date = as.Date(activities$start_date),
