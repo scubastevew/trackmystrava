@@ -13,11 +13,13 @@ client_secret <- Sys.getenv("STRAVA_CLIENT_SECRET")
 
 # Modified OAuth function for deployed environment
 strava_oauth <- function(session) {
+  # Define endpoints
   oauth_endpoint <- oauth_endpoint(
     authorize = "https://www.strava.com/oauth/authorize",
     access = "https://www.strava.com/oauth/token"
   )
   
+  # Create OAuth app object
   oauth_app <- oauth_app(
     appname = app_name,
     key = client_id,
@@ -25,20 +27,15 @@ strava_oauth <- function(session) {
     redirect_uri = "https://connect.posit.cloud"
   )
   
-  # Get OAuth token with minimal configuration
+  # Use a more robust token acquisition method
   token <- oauth2.0_token(
     endpoint = oauth_endpoint,
     app = oauth_app,
     scope = "activity:read_all,read,profile:read_all",
-    cache = FALSE
+    cache = FALSE,
+    use_oob = TRUE,  # Use out-of-band authentication
+    oob_value = "https://connect.posit.cloud"  # Specify OOB redirect
   )
-  
-  # Verify token immediately
-  test_url <- "https://www.strava.com/api/v3/athlete"
-  test_response <- GET(test_url, config(token = token))
-  if (status_code(test_response) != 200) {
-    stop("Token verification failed")
-  }
   
   return(token)
 }
