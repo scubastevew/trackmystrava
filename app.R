@@ -6,16 +6,65 @@ library(DT)
 library(httr)
 library(jsonlite)
 
+# Create an environment to store our functions and credentials
+stravaEnv <- new.env()
+
 # Strava API credentials
-app_name <- Sys.getenv("STRAVA_APP_NAME")
-client_id <- Sys.getenv("STRAVA_CLIENT_ID")
-client_secret <- Sys.getenv("STRAVA_CLIENT_SECRET")
-refresh_token <- Sys.getenv("STRAVA_REFRESH_TOKEN")
+stravaEnv$app_name <- Sys.getenv("STRAVA_APP_NAME")
+stravaEnv$client_id <- Sys.getenv("STRAVA_CLIENT_ID")
+stravaEnv$client_secret <- Sys.getenv("STRAVA_CLIENT_SECRET")
+stravaEnv$refresh_token <- Sys.getenv("STRAVA_REFRESH_TOKEN")
+
+# Function to get a fresh access token with improved error handling
+stravaEnv$get_access_token <- function() {
+  token_url <- "https://www.strava.com/oauth/token"
+  
+  # Validate credentials
+  if (any(c(stravaEnv$client_id, stravaEnv$client_secret, stravaEnv$refresh_token) == "")) {
+    stop("Missing Strava credentials. Check environment variables.")
+  }
+  
+  # Make the token refresh request
+  response <- POST(
+    url = token_url,
+    body = list(
+      client_id = stravaEnv$client_id,
+      client_secret = stravaEnv$client_secret,
+      refresh_token = stravaEnv$refresh_token,
+      grant_type = "refresh_token",
+      scope = "activity:read_all,read_all,profile:read_all"
+    ),
+    encode = "form"
+  )
+  
+  # Handle response
+  if (status_code(response) != 200) {
+    content <- tryCatch(
+      fromJSON(rawToChar(response$content)),
+      error = function(e) NULL
+    )
+    error_msg <- if (!is.null(content$message)) content$message else "Unknown error"
+    stop(paste("Token refresh failed:", error_msg))
+  }
+  
+  content <- fromJSON(rawToChar(response$content))
+  
+  if (is.null(content$access_token)) {
+    stop("No access token in response")
+  }
+  
+  # Update refresh token if provided
+  if (!is.null(content$refresh_token)) {
+    stravaEnv$refresh_token <- content$refresh_token
+  }
+  
+  return(content$access_token)
+}
 
 # Function to fetch activities with improved error handling
-fetch_strava_activities <- function() {
+stravaEnv$fetch_strava_activities <- function() {
   # Get fresh access token
-  access_token <- get_access_token()
+  access_token <- stravaEnv$get_access_token()
   
   url <- "https://www.strava.com/api/v3/athlete/activities"
   
@@ -23,20 +72,15 @@ fetch_strava_activities <- function() {
   response <- GET(
     url,
     add_headers(
-      `Authorization` = sprintf("Bearer %s", access_token)  # Modified format
+      `Authorization` = sprintf("Bearer %s", access_token)
     ),
     query = list(
-      per_page = 200  # Removed duplicate access token
+      per_page = 200
     )
   )
   
   # Handle response
   if (status_code(response) != 200) {
-    # Print detailed error information for debugging
-    print(paste("Response status:", status_code(response)))
-    print(paste("Response headers:", toString(headers(response))))
-    print(paste("Response content:", rawToChar(response$content)))
-    
     content <- tryCatch(
       fromJSON(rawToChar(response$content)),
       error = function(e) NULL
@@ -48,10 +92,9 @@ fetch_strava_activities <- function() {
   activities <- fromJSON(rawToChar(response$content))
   
   if (length(activities) == 0) {
-    return(data.frame())  # Return empty dataframe instead of error
+    return(data.frame())
   }
   
-  # Rest of the function remains the same...
   df <- data.frame(
     date = as.Date(activities$start_date),
     type = activities$type,
@@ -76,7 +119,7 @@ fetch_strava_activities <- function() {
     arrange(desc(date))
 }
 
-# Rest of the UI and server code remains the same
+# UI remains the same
 ui <- page_sidebar(
   title = "My Strava Dashboard",
   theme = bs_theme(bootswatch = "flatly"),
@@ -130,6 +173,7 @@ ui <- page_sidebar(
   )
 )
 
+# Modified server to use the environment
 server <- function(input, output, session) {
   activity_data <- reactiveVal(NULL)
   status <- reactiveVal("")
@@ -138,7 +182,7 @@ server <- function(input, output, session) {
     status("Fetching data from Strava...")
     
     tryCatch({
-      activities <- fetch_strava_activities()
+      activities <- stravaEnv$fetch_strava_activities()
       activity_data(activities)
       status("Data successfully retrieved!")
     }, error = function(e) {
