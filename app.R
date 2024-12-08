@@ -29,7 +29,7 @@ stravaEnv$get_access_token <- function() {
   message("Client ID: ", substr(stravaEnv$client_id, 1, 4), "...")
   message("Refresh Token: ", substr(stravaEnv$refresh_token, 1, 4), "...")
   
-  # Make the token refresh request with explicit scopes
+  # Make the token refresh request with ALL required scopes
   response <- POST(
     url = token_url,
     add_headers(
@@ -41,14 +41,13 @@ stravaEnv$get_access_token <- function() {
       client_secret = stravaEnv$client_secret,
       refresh_token = stravaEnv$refresh_token,
       grant_type = "refresh_token",
-      scope = "read,read_all,profile:read_all,activity:read_all"
+      scope = "activity:read,activity:read_all,read,read_all,profile:read_all"
     ),
     encode = "form"
   )
   
-  # Handle response with more detailed error information
+  # Handle response with detailed logging
   if (status_code(response) != 200) {
-    # Print detailed error information
     message("Token refresh failed with status: ", status_code(response))
     message("Response headers: ", toJSON(headers(response)))
     
@@ -78,6 +77,9 @@ stravaEnv$get_access_token <- function() {
   }
   
   message("Successfully obtained new access token")
+  message("Token expires at: ", content$expires_at)
+  message("Token scopes: ", content$scope)
+  
   return(content$access_token)
 }
 
@@ -91,7 +93,7 @@ stravaEnv$fetch_strava_activities <- function() {
   # Print debug information
   message("Making API request with token: ", substr(access_token, 1, 10), "...")
   
-  # Make the API request with modified headers
+  # Make the API request with both header and query parameter authentication
   response <- GET(
     url,
     add_headers(
@@ -100,7 +102,7 @@ stravaEnv$fetch_strava_activities <- function() {
     ),
     query = list(
       per_page = 200,
-      access_token = access_token  # Added explicit access token in query
+      access_token = access_token  # Include token in query params as backup
     )
   )
   
@@ -108,7 +110,7 @@ stravaEnv$fetch_strava_activities <- function() {
   message("API Response Status: ", status_code(response))
   message("API Response Headers: ", toJSON(headers(response)))
   
-  # Handle response
+  # Handle response with detailed error information
   if (status_code(response) != 200) {
     response_content <- rawToChar(response$content)
     message("API Error Response Content: ", response_content)
@@ -117,7 +119,12 @@ stravaEnv$fetch_strava_activities <- function() {
       fromJSON(response_content),
       error = function(e) NULL
     )
-    error_msg <- if (!is.null(content$message)) content$message else "Unknown error"
+    error_msg <- if (!is.null(content$message)) {
+      paste0(content$message, 
+            if (!is.null(content$errors)) 
+              paste0(" (", toJSON(content$errors), ")")
+            else "")
+    } else "Unknown error"
     stop(paste("API request failed:", status_code(response), "Error:", error_msg))
   }
   
