@@ -24,25 +24,43 @@ stravaEnv$get_access_token <- function() {
     stop("Missing Strava credentials. Check environment variables.")
   }
   
-  # Make the token refresh request
+  # Print debug information
+  message("Attempting to refresh token with credentials:")
+  message("Client ID: ", substr(stravaEnv$client_id, 1, 4), "...")
+  message("Refresh Token: ", substr(stravaEnv$refresh_token, 1, 4), "...")
+  
+  # Make the token refresh request with explicit scopes
   response <- POST(
     url = token_url,
+    add_headers(
+      "Accept" = "application/json",
+      "Content-Type" = "application/x-www-form-urlencoded"
+    ),
     body = list(
       client_id = stravaEnv$client_id,
       client_secret = stravaEnv$client_secret,
       refresh_token = stravaEnv$refresh_token,
       grant_type = "refresh_token",
-      scope = "activity:read_all,read_all,profile:read_all"
+      scope = "read,read_all,profile:read_all,activity:read_all"
     ),
     encode = "form"
   )
   
-  # Handle response
+  # Handle response with more detailed error information
   if (status_code(response) != 200) {
+    # Print detailed error information
+    message("Token refresh failed with status: ", status_code(response))
+    message("Response headers: ", toJSON(headers(response)))
+    
     content <- tryCatch(
       fromJSON(rawToChar(response$content)),
       error = function(e) NULL
     )
+    
+    if (!is.null(content)) {
+      message("Error response content: ", toJSON(content))
+    }
+    
     error_msg <- if (!is.null(content$message)) content$message else "Unknown error"
     stop(paste("Token refresh failed:", error_msg))
   }
@@ -56,8 +74,10 @@ stravaEnv$get_access_token <- function() {
   # Update refresh token if provided
   if (!is.null(content$refresh_token)) {
     stravaEnv$refresh_token <- content$refresh_token
+    message("Received new refresh token")
   }
   
+  message("Successfully obtained new access token")
   return(content$access_token)
 }
 
