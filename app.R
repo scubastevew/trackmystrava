@@ -13,27 +13,29 @@ client_secret <- Sys.getenv("STRAVA_CLIENT_SECRET")
 
 # Modified OAuth function for deployed environment
 strava_oauth <- function(session) {
-  # For connect.posit.cloud, we use the main domain
+  # For connect.posit.cloud, we need the full content URL
+  base_url <- "https://connect.posit.cloud/scubastevew/content/0193a2ef-7b7b-d36d-9122-1fa0ede20220"
+  
   oauth_endpoint <- oauth_endpoint(
     authorize = "https://www.strava.com/oauth/authorize",
     access = "https://www.strava.com/oauth/token"
   )
   
-  # Create OAuth app with connect.posit.cloud domain
   oauth_app <- oauth_app(
     appname = app_name,
     key = client_id,
     secret = client_secret,
-    redirect_uri = "https://connect.posit.cloud"
+    redirect_uri = base_url
   )
   
-  # Get OAuth token
+  # Get OAuth token with specific configuration for Strava
   token <- oauth2.0_token(
     endpoint = oauth_endpoint,
     app = oauth_app,
     scope = "activity:read_all,read,profile:read_all",
     cache = FALSE,
-    use_basic_auth = TRUE
+    use_basic_auth = TRUE,
+    oob_value = base_url  # Explicitly set the out-of-band URL
   )
   
   return(token)
