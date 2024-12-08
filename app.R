@@ -12,45 +12,35 @@ client_id <- Sys.getenv("STRAVA_CLIENT_ID")
 client_secret <- Sys.getenv("STRAVA_CLIENT_SECRET")
 refresh_token <- Sys.getenv("STRAVA_REFRESH_TOKEN")
 
-# Function to get a fresh access token
+# Function to get a fresh access token with improved error handling
 get_access_token <- function() {
   token_url <- "https://www.strava.com/oauth/token"
   
-  # Print debugging info (remove in production)
-  print(paste("Client ID present:", !is.null(client_id) && client_id != ""))
-  print(paste("Client Secret present:", !is.null(client_secret) && client_secret != ""))
-  print(paste("Refresh Token present:", !is.null(refresh_token) && refresh_token != ""))
-  
-  # Check if we have all required credentials
-  if (is.null(client_id) || client_id == "" ||
-      is.null(client_secret) || client_secret == "" ||
-      is.null(refresh_token) || refresh_token == "") {
-    stop("Missing required Strava credentials. Check environment variables.")
+  # Validate credentials
+  if (any(c(client_id, client_secret, refresh_token) == "")) {
+    stop("Missing Strava credentials. Check environment variables.")
   }
   
-  response <- tryCatch({
-    POST(
-      url = token_url,
-      body = list(
-        client_id = client_id,
-        client_secret = client_secret,
-        refresh_token = refresh_token,
-        grant_type = "refresh_token"
-      ),
-      encode = "json"  # Explicitly set encoding
-    )
-  }, error = function(e) {
-    stop(paste("Network error while refreshing token:", e$message))
-  })
+  # Make the token refresh request
+  response <- POST(
+    url = token_url,
+    body = list(
+      client_id = client_id,
+      client_secret = client_secret,
+      refresh_token = refresh_token,
+      grant_type = "refresh_token"
+    ),
+    encode = "form"  # Changed to form encoding
+  )
   
-  # Check response status and content
+  # Handle response
   if (status_code(response) != 200) {
-    error_content <- tryCatch(
+    content <- tryCatch(
       fromJSON(rawToChar(response$content)),
-      error = function(e) list(message = "Unknown error")
+      error = function(e) NULL
     )
-    stop(paste("Failed to refresh token. Status:", status_code(response),
-               "Error:", error_content$message))
+    error_msg <- if (!is.null(content$message)) content$message else "Unknown error"
+    stop(paste("Token refresh failed:", error_msg))
   }
   
   content <- fromJSON(rawToChar(response$content))
@@ -59,71 +49,73 @@ get_access_token <- function() {
     stop("No access token in response")
   }
   
+  # Update refresh token if provided
+  if (!is.null(content$refresh_token)) {
+    refresh_token <<- content$refresh_token
+  }
+  
   return(content$access_token)
 }
 
-# Function to fetch activities with the fresh token
+# Function to fetch activities with improved error handling
 fetch_strava_activities <- function() {
-  tryCatch({
-    access_token <- get_access_token()
-    
-    url <- "https://www.strava.com/api/v3/athlete/activities"
-    response <- GET(
-      url,
-      add_headers(
-        Authorization = paste("Bearer", access_token),
-        Accept = "application/json"
-      ),
-      query = list(per_page = 200)
+  # Get fresh access token
+  access_token <- get_access_token()
+  
+  url <- "https://www.strava.com/api/v3/athlete/activities"
+  
+  # Make the API request
+  response <- GET(
+    url,
+    add_headers(
+      Authorization = paste("Bearer", access_token),
+      Accept = "application/json"
+    ),
+    query = list(per_page = 200)
+  )
+  
+  # Handle response
+  if (status_code(response) != 200) {
+    content <- tryCatch(
+      fromJSON(rawToChar(response$content)),
+      error = function(e) NULL
     )
-    
-    # Print response details for debugging (remove in production)
-    print(paste("Response status:", status_code(response)))
-    print(paste("Response headers:", toString(headers(response))))
-    
-    if (status_code(response) != 200) {
-      error_content <- tryCatch(
-        fromJSON(rawToChar(response$content)),
-        error = function(e) list(message = "Unknown error")
-      )
-      stop(paste("API request failed:", status_code(response),
-                 "Error:", error_content$message))
-    }
-    
-    activities <- fromJSON(rawToChar(response$content))
-    
-    if (length(activities) == 0) {
-      stop("No activities found in response")
-    }
-    
-    df <- data.frame(
-      date = as.Date(activities$start_date),
-      type = activities$type,
-      country = ifelse(is.null(activities$location_country) | 
-                        is.na(activities$location_country) | 
-                        activities$location_country == "", 
-                      "Unknown", 
-                      activities$location_country),
-      distance = activities$distance / 1000,
-      duration = activities$moving_time / 60,
-      elevation = activities$total_elevation_gain,
-      avg_speed = activities$average_speed * 3.6,
-      avg_watts = activities$average_watts,
-      max_watts = activities$max_watts,
-      avg_heartrate = activities$average_heartrate,
-      max_heartrate = activities$max_heartrate,
-      calories = activities$kilojoules
-    )
-    
-    df %>%
-      filter(!type %in% c("Walk", "WeightTraining", "Swim")) %>%
-      arrange(desc(date))
-    
-  }, error = function(e) {
-    stop(paste("Failed to fetch activities:", e$message))
-  })
+    error_msg <- if (!is.null(content$message)) content$message else "Unknown error"
+    stop(paste("API request failed:", status_code(response), "Error:", error_msg))
+  }
+  
+  activities <- fromJSON(rawToChar(response$content))
+  
+  if (length(activities) == 0) {
+    return(data.frame())  # Return empty dataframe instead of error
+  }
+  
+  # Create activities dataframe with safer type conversion
+  df <- data.frame(
+    date = as.Date(activities$start_date),
+    type = activities$type,
+    country = ifelse(is.null(activities$location_country) | 
+                      is.na(activities$location_country) | 
+                      activities$location_country == "", 
+                    "Unknown", 
+                    activities$location_country),
+    distance = as.numeric(activities$distance) / 1000,
+    duration = as.numeric(activities$moving_time) / 60,
+    elevation = as.numeric(activities$total_elevation_gain),
+    avg_speed = as.numeric(activities$average_speed) * 3.6,
+    avg_watts = as.numeric(activities$average_watts),
+    max_watts = as.numeric(activities$max_watts),
+    avg_heartrate = as.numeric(activities$average_heartrate),
+    max_heartrate = as.numeric(activities$max_heartrate),
+    calories = as.numeric(activities$kilojoules)
+  )
+  
+  df %>%
+    filter(!type %in% c("Walk", "WeightTraining", "Swim")) %>%
+    arrange(desc(date))
 }
 
+# Rest of the UI and server code remains the same
 ui <- page_sidebar(
   title = "My Strava Dashboard",
   theme = bs_theme(bootswatch = "flatly"),
