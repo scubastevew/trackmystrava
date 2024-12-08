@@ -25,29 +25,17 @@ strava_oauth <- function(session) {
     redirect_uri = "https://connect.posit.cloud"
   )
   
-  # Handle both interactive and non-interactive sessions
-  if (interactive()) {
-    token <- oauth2.0_token(
-      endpoint = oauth_endpoint,
-      app = oauth_app,
-      scope = "activity:read_all,read,profile:read_all",
-      cache = FALSE,
-      use_basic_auth = TRUE,
-      use_oob = TRUE
+  # Get OAuth token with minimal configuration
+  token <- oauth2.0_token(
+    endpoint = oauth_endpoint,
+    app = oauth_app,
+    scope = "activity:read_all,read,profile:read_all",
+    cache = FALSE,
+    credentials = list(
+      client_id = client_id,
+      client_secret = client_secret
     )
-  } else {
-    # For non-interactive sessions (like Posit Connect)
-    token <- oauth2.0_token(
-      endpoint = oauth_endpoint,
-      app = oauth_app,
-      scope = "activity:read_all,read,profile:read_all",
-      cache = FALSE,
-      use_basic_auth = TRUE,
-      options = list(
-        auth_type = "client_credentials"
-      )
-    )
-  }
+  )
   
   return(token)
 }
