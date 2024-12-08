@@ -12,15 +12,10 @@ client_id <- Sys.getenv("STRAVA_CLIENT_ID")
 client_secret <- Sys.getenv("STRAVA_CLIENT_SECRET")
 
 # Modified OAuth function for deployed environment
+# Modified OAuth function for deployed environment
 strava_oauth <- function(session) {
-  # Get the app's URL when deployed
-  app_url <- session$clientData$url_protocol
+  # Get just the hostname when deployed
   host <- session$clientData$url_hostname
-  port <- session$clientData$url_port
-  base_url <- paste0(app_url, "//", host)
-  if (!is.null(port) && port != "") {
-    base_url <- paste0(base_url, ":", port)
-  }
   
   # Create OAuth endpoint
   oauth_endpoint <- oauth_endpoint(
@@ -28,12 +23,12 @@ strava_oauth <- function(session) {
     access = "https://www.strava.com/oauth/token"
   )
   
-  # Create OAuth app
+  # Create OAuth app with just the domain
   oauth_app <- oauth_app(
     appname = app_name,
     key = client_id,
     secret = client_secret,
-    redirect_uri = base_url
+    redirect_uri = paste0("https://", host)
   )
   
   # Get OAuth token
