@@ -12,23 +12,19 @@ client_id <- Sys.getenv("STRAVA_CLIENT_ID")
 client_secret <- Sys.getenv("STRAVA_CLIENT_SECRET")
 
 # Modified OAuth function for deployed environment
-# Modified OAuth function for deployed environment
 strava_oauth <- function(session) {
-  # Get just the hostname when deployed
-  host <- session$clientData$url_hostname
-  
-  # Create OAuth endpoint
+  # For connect.posit.cloud, we use the main domain
   oauth_endpoint <- oauth_endpoint(
     authorize = "https://www.strava.com/oauth/authorize",
     access = "https://www.strava.com/oauth/token"
   )
   
-  # Create OAuth app with just the domain
+  # Create OAuth app with connect.posit.cloud domain
   oauth_app <- oauth_app(
     appname = app_name,
     key = client_id,
     secret = client_secret,
-    redirect_uri = paste0("https://", host)
+    redirect_uri = "https://connect.posit.cloud"
   )
   
   # Get OAuth token
