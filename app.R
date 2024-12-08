@@ -13,31 +13,58 @@ client_secret <- Sys.getenv("STRAVA_CLIENT_SECRET")
 
 # Modified OAuth function for deployed environment
 strava_oauth <- function(session) {
-  # Define endpoints
-  oauth_endpoint <- oauth_endpoint(
-    authorize = "https://www.strava.com/oauth/authorize",
-    access = "https://www.strava.com/oauth/token"
+  # First, try to get token directly using client credentials
+  token_url <- "https://www.strava.com/oauth/token"
+  
+  response <- POST(
+    url = token_url,
+    body = list(
+      client_id = client_id,
+      client_secret = client_secret,
+      grant_type = "client_credentials"
+    ),
+    encode = "json"
   )
   
-  # Create OAuth app object
-  oauth_app <- oauth_app(
-    appname = app_name,
-    key = client_id,
-    secret = client_secret,
-    redirect_uri = "https://connect.posit.cloud"
-  )
-  
-  # Use a more robust token acquisition method
-  token <- oauth2.0_token(
-    endpoint = oauth_endpoint,
-    app = oauth_app,
-    scope = "activity:read_all,read,profile:read_all",
-    cache = FALSE,
-    use_oob = TRUE,  # Use out-of-band authentication
-    oob_value = "https://connect.posit.cloud"  # Specify OOB redirect
-  )
-  
-  return(token)
+  if (status_code(response) == 200) {
+    token_data <- fromJSON(rawToChar(response$content))
+    token <- Token2.0$new(
+      app = oauth_app(
+        appname = app_name,
+        key = client_id,
+        secret = client_secret
+      ),
+      endpoint = oauth_endpoint(
+        authorize = "https://www.strava.com/oauth/authorize",
+        access = "https://www.strava.com/oauth/token"
+      ),
+      credentials = list(
+        access_token = token_data$access_token,
+        token_type = "Bearer"
+      )
+    )
+    return(token)
+  } else {
+    # If client credentials flow fails, try alternative authentication
+    token <- oauth2.0_token(
+      endpoint = oauth_endpoint(
+        authorize = "https://www.strava.com/oauth/authorize",
+        access = "https://www.strava.com/oauth/token"
+      ),
+      app = oauth_app(
+        appname = app_name,
+        key = client_id,
+        secret = client_secret,
+        redirect_uri = "https://connect.posit.cloud"
+      ),
+      scope = "activity:read_all,read,profile:read_all",
+      cache = FALSE,
+      credentials = list(
+        grant_type = "authorization_code"
+      )
+    )
+    return(token)
+  }
 }
 
 # Enhanced fetch_strava_activities function with better error handling
