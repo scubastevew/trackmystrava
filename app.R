@@ -158,7 +158,7 @@ stravaEnv$fetch_strava_activities <- function() {
 
 # UI Definition
 ui <- page_sidebar(
-  title = "My Strava Dashboard",
+  title = "My Strava Dashboard by Steve",
   theme = bs_theme(bootswatch = "flatly"),
   
   sidebar = sidebar(
