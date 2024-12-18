@@ -13,21 +13,16 @@ client_secret <- Sys.getenv("STRAVA_CLIENT_SECRET")
 
 # Modified OAuth function for Posit Connect
 strava_oauth <- function(app_name, client_id, client_secret, session) {
-  # Get the full URL of the app
   host_url <- session$clientData$url_hostname
   path <- session$clientData$url_pathname
-  
-  # Construct the redirect URI
   redirect_uri <- sprintf("https://%s%s", host_url, path)
   
-  # Create the authorization URL
   auth_url <- sprintf(
     "https://www.strava.com/oauth/authorize?client_id=%s&response_type=code&redirect_uri=%s&scope=activity:read_all,read,profile:read_all",
     client_id,
     utils::URLencode(redirect_uri, reserved = TRUE)
   )
   
-  # Return the authorization URL and other info
   list(
     auth_url = auth_url,
     redirect_uri = redirect_uri
@@ -58,13 +53,12 @@ get_token <- function(code, client_id, client_secret, redirect_uri) {
 fetch_strava_activities <- function(access_token, start_date = NULL, end_date = NULL) {
   url <- "https://www.strava.com/api/v3/athlete/activities"
   
-  # Convert dates to Unix timestamps if provided
   query_params <- list(per_page = 200)
   if (!is.null(start_date)) {
     query_params$after <- as.numeric(as.POSIXct(start_date))
   }
   if (!is.null(end_date)) {
-    query_params$before <- as.numeric(as.POSIXct(end_date)) + 86400  # Add one day to include end date
+    query_params$before <- as.numeric(as.POSIXct(end_date)) + 86400
   }
   
   response <- GET(url, 
@@ -160,8 +154,8 @@ ui <- page_sidebar(
       plotOutput("time_series")
     ),
     card(
-      card_header("Distance by Activity Type"),
-      plotOutput("activity_dist")
+      card_header("Activity Details"),
+      uiOutput("activity_details")
     )
   ),
   
@@ -176,14 +170,10 @@ server <- function(input, output, session) {
   activity_data <- reactiveVal(NULL)
   auth_status <- reactiveVal("")
   
-  # Initialize authentication on app load
   observe({
     auth_status("Initiating Strava authentication...")
-    
-    # Get OAuth config
     oauth_config <- strava_oauth(app_name, client_id, client_secret, session)
     
-    # Create clickable link
     output$auth_link <- renderUI({
       tags$div(
         style = "margin-top: 10px;",
@@ -199,7 +189,6 @@ server <- function(input, output, session) {
     auth_status("Please click the authorization link above.")
   })
   
-  # Handle OAuth callback
   observe({
     query <- parseQueryString(session$clientData$url_search)
     
@@ -207,16 +196,13 @@ server <- function(input, output, session) {
       tryCatch({
         auth_status("Processing authentication...")
         
-        # Get the redirect URI
         host_url <- session$clientData$url_hostname
         path <- session$clientData$url_pathname
         redirect_uri <- sprintf("https://%s%s", host_url, path)
         
-        # Exchange code for token
         token_data <- get_token(query$code, client_id, client_secret, redirect_uri)
         access_token(token_data$access_token)
         
-        # Initial fetch of activities with date range
         activities <- fetch_strava_activities(
           token_data$access_token,
           input$date_range[1],
@@ -232,14 +218,12 @@ server <- function(input, output, session) {
     }
   })
   
-  # New observer for the search button
   observeEvent(input$search, {
     req(access_token())
     
     tryCatch({
       auth_status("Fetching activities...")
       
-      # Fetch activities with date range
       activities <- fetch_strava_activities(
         access_token(),
         input$date_range[1],
@@ -252,10 +236,6 @@ server <- function(input, output, session) {
     }, error = function(e) {
       auth_status(paste("Error fetching activities:", conditionMessage(e)))
     })
-  })
-  
-  output$auth_status <- renderText({
-    auth_status()
   })
   
   activities <- reactive({
@@ -295,18 +275,6 @@ server <- function(input, output, session) {
       theme(legend.position = "bottom")
   })
   
-  output$activity_dist <- renderPlot({
-    req(activities())
-    activities() %>%
-      group_by(type) %>%
-      summarise(total_distance = sum(distance)) %>%
-      ggplot(aes(x = reorder(type, -total_distance), y = total_distance, fill = type)) +
-      geom_col() +
-      theme_minimal() +
-      labs(x = "Activity Type", y = "Total Distance (km)") +
-      theme(legend.position = "none")
-  })
-  
   output$activity_table <- renderDT({
     req(activities())
     activities() %>%
@@ -318,6 +286,7 @@ server <- function(input, output, session) {
         across(where(is.numeric), ~ifelse(is.na(.), NA, round(., 1)))
       ) %>%
       datatable(
+        selection = 'single',
         options = list(
           pageLength = 5,
           columnDefs = list(
@@ -333,6 +302,64 @@ server <- function(input, output, session) {
         )
       )
   })
-}
-
-shinyApp(ui, server)
+  
+    output$activity_details <- renderUI({
+    req(activities(), input$activity_table_rows_selected)
+    
+    selected_activity <- activities()[input$activity_table_rows_selected, ]
+    
+    div(
+      layout_columns(
+        value_box(
+          title = "Distance",
+          value = paste(round(selected_activity$distance, 1), "km"),
+          showcase = bsicons::bs_icon("map")
+        ),
+        value_box(
+          title = "Duration",
+          value = paste(round(selected_activity$duration, 0), "min"),
+          showcase = bsicons::bs_icon("clock")
+        )
+      ),
+      layout_columns(
+        value_box(
+          title = "Elevation",
+          value = paste(round(selected_activity$elevation, 0), "m"),
+          showcase = bsicons::bs_icon("graph-up")
+        ),
+        value_box(
+          title = "Avg Speed",
+          value = paste(round(selected_activity$avg_speed, 1), "km/h"),
+          showcase = bsicons::bs_icon("speedometer")
+        )
+      ),
+      layout_columns(
+        value_box(
+          title = "Avg Watts",
+          value = if(is.na(selected_activity$avg_watts)) "N/A" 
+                  else paste(round(selected_activity$avg_watts, 0), "W"),
+          showcase = bsicons::bs_icon("lightning")
+        ),
+        value_box(
+          title = "Max Watts",
+          value = if(is.na(selected_activity$max_watts)) "N/A" 
+                  else paste(round(selected_activity$max_watts, 0), "W"),
+          showcase = bsicons::bs_icon("lightning-charge")
+        )
+      ),
+      layout_columns(
+        value_box(
+          title = "Avg Heart Rate",
+          value = if(is.na(selected_activity$avg_heartrate)) "N/A" 
+                  else paste(round(selected_activity$avg_heartrate, 0), "bpm"),
+          showcase = bsicons::bs_icon("heart-pulse")
+        ),
+        value_box(
+          title = "Max Heart Rate",
+          value = if(is.na(selected_activity$max_heartrate)) "N/A" 
+                  else paste(round(selected_activity$max_heartrate, 0), "bpm"),
+          showcase = bsicons::bs_icon("heart")
+        )
+      )
+    )
+  })
