@@ -6,164 +6,72 @@ library(DT)
 library(httr)
 library(jsonlite)
 
-# Create an environment to store our functions and credentials
-stravaEnv <- new.env()
 
-# Strava API credentials
-stravaEnv$app_name <- Sys.getenv("STRAVA_APP_NAME")
-stravaEnv$client_id <- Sys.getenv("STRAVA_CLIENT_ID")
-stravaEnv$client_secret <- Sys.getenv("STRAVA_CLIENT_SECRET")
-stravaEnv$refresh_token <- Sys.getenv("STRAVA_REFRESH_TOKEN")
+# Strava API credentials - replace with your own
+app_name <- Sys.getenv("STRAVA_APP_NAME")
+client_id <- Sys.getenv("STRAVA_CLIENT_ID")
+client_secret <- Sys.getenv("STRAVA_CLIENT_SECRET")
 
-# Function to get a fresh access token with improved error handling
-stravaEnv$get_access_token <- function() {
-  token_url <- "https://www.strava.com/oauth/token"
-  
-  # Validate credentials
-  if (any(c(stravaEnv$client_id, stravaEnv$client_secret, stravaEnv$refresh_token) == "")) {
-    stop("Missing Strava credentials. Check environment variables.")
-  }
-  
-  # Print debug information
-  message("Attempting to refresh token with credentials:")
-  message("Client ID: ", substr(stravaEnv$client_id, 1, 4), "...")
-  message("Refresh Token: ", substr(stravaEnv$refresh_token, 1, 4), "...")
-  
-  # Make the token refresh request with explicit scopes
-  response <- POST(
-    url = token_url,
-    add_headers(
-      "Accept" = "application/json",
-      "Content-Type" = "application/x-www-form-urlencoded"
+# Custom OAuth function with correct scopes - use the working version
+strava_oauth <- function(app_name, client_id, client_secret, cache = TRUE) {
+  httr::oauth2.0_token(
+    endpoint = httr::oauth_endpoint(
+      authorize = "https://www.strava.com/oauth/authorize",
+      access = "https://www.strava.com/oauth/token"
     ),
-    body = list(
-      client_id = stravaEnv$client_id,
-      client_secret = stravaEnv$client_secret,
-      refresh_token = stravaEnv$refresh_token,
-      grant_type = "refresh_token",
-      scope = "activity:read,activity:read_all,profile:read_all,read,read_all"
+    app = httr::oauth_app(
+      appname = app_name,
+      key = client_id,
+      secret = client_secret
     ),
-    encode = "form"
+    scope = "activity:read_all,read,profile:read_all",
+    cache = cache
   )
-  
-  # Print raw response for debugging
-  message("Token refresh response status: ", status_code(response))
-  message("Token refresh response headers: ", toJSON(headers(response)))
-  response_content <- rawToChar(response$content)
-  message("Token refresh response content: ", response_content)
-  
-  # Handle response
-  if (status_code(response) != 200) {
-    content <- tryCatch(
-      fromJSON(response_content),
-      error = function(e) NULL
-    )
-    error_msg <- if (!is.null(content$message)) content$message else "Unknown error"
-    stop(paste("Token refresh failed:", error_msg))
-  }
-  
-  content <- fromJSON(response_content)
-  
-  if (is.null(content$access_token)) {
-    stop("No access token in response")
-  }
-  
-  # Update refresh token if provided
-  if (!is.null(content$refresh_token)) {
-    stravaEnv$refresh_token <- content$refresh_token
-    message("Received new refresh token")
-  }
-  
-  # Print token details
-  message("Successfully obtained new access token")
-  message("Token expires at: ", content$expires_at)
-  message("Token scopes: ", paste(content$scope, collapse = ","))
-  
-  return(content$access_token)
 }
 
-# Function to fetch activities with improved error handling
-stravaEnv$fetch_strava_activities <- function() {
-  # Get fresh access token
-  access_token <- stravaEnv$get_access_token()
-  
+# Function to fetch Strava activities
+fetch_strava_activities <- function(token) {
+  # Get activities from Strava API
   url <- "https://www.strava.com/api/v3/athlete/activities"
+  response <- GET(url, config(token = token), query = list(per_page = 200))
   
-  # Print debug information
-  message("Making API request with token: ", substr(access_token, 1, 10), "...")
-  
-  # Make the API request with both header and query parameter authentication
-  response <- GET(
-    url,
-    add_headers(
-      "Authorization" = paste("Bearer", access_token),
-      "Accept" = "application/json"
-    ),
-    query = list(
-      per_page = 200,
-      access_token = access_token  # Include token in query params as backup
-    )
-  )
-  
-  # Print response details for debugging
-  message("API Response Status: ", status_code(response))
-  message("API Response Headers: ", toJSON(headers(response)))
-  response_content <- rawToChar(response$content)
-  message("API Response Content: ", response_content)
-  
-  # Handle response
   if (status_code(response) != 200) {
-    content <- tryCatch(
-      fromJSON(response_content),
-      error = function(e) NULL
-    )
-    error_msg <- if (!is.null(content$message)) {
-      paste0(content$message, 
-            if (!is.null(content$errors)) 
-              paste0(" (", toJSON(content$errors), ")")
-            else "")
-    } else "Unknown error"
-    stop(paste("API request failed:", status_code(response), "Error:", error_msg))
+    stop("Failed to fetch activities from Strava")
   }
   
-  activities <- fromJSON(response_content)
+  activities <- fromJSON(rawToChar(response$content))
   
-  if (length(activities) == 0) {
-    return(data.frame())
-  }
-  
+  # Convert to data frame with all metrics
   df <- data.frame(
     date = as.Date(activities$start_date),
     type = activities$type,
-    country = ifelse(is.null(activities$location_country) | 
-                      is.na(activities$location_country) | 
-                      activities$location_country == "", 
-                    "Unknown", 
-                    activities$location_country),
-    distance = as.numeric(activities$distance) / 1000,
-    duration = as.numeric(activities$moving_time) / 60,
-    elevation = as.numeric(activities$total_elevation_gain),
-    avg_speed = as.numeric(activities$average_speed) * 3.6,
-    avg_watts = as.numeric(activities$average_watts),
-    max_watts = as.numeric(activities$max_watts),
-    avg_heartrate = as.numeric(activities$average_heartrate),
-    max_heartrate = as.numeric(activities$max_heartrate),
-    calories = as.numeric(activities$kilojoules)
+    country = ifelse(is.null(activities$location_country) | is.na(activities$location_country) | activities$location_country == "", 
+                     "Unknown", 
+                     activities$location_country),
+    distance = activities$distance / 1000,  # Convert to km
+    duration = activities$moving_time / 60,  # Convert to minutes
+    elevation = activities$total_elevation_gain,
+    avg_speed = activities$average_speed * 3.6,  # Convert to km/h
+    avg_watts = activities$average_watts,
+    max_watts = activities$max_watts,
+    avg_heartrate = activities$average_heartrate,
+    max_heartrate = activities$max_heartrate,
+    calories = activities$kilojoules
   )
   
+  # Filter out unwanted activity types and arrange by date
   df %>%
     filter(!type %in% c("Walk", "WeightTraining", "Swim")) %>%
     arrange(desc(date))
 }
 
-# UI Definition
 ui <- page_sidebar(
-  title = "My Strava Dashboard by Steve",
+  title = "My Strava Dashboard",
   theme = bs_theme(bootswatch = "flatly"),
   
   sidebar = sidebar(
-    actionButton("fetch", "Fetch Strava Data", class = "btn-primary"),
-    verbatimTextOutput("status"),
+    actionButton("auth", "Connect to Strava", class = "btn-primary"),
+    verbatimTextOutput("auth_status"),
     selectInput("activity_type", "Activity Type",
                 choices = c("All", "Run", "Ride", "VirtualRide")),
     dateRangeInput("date_range", "Date Range",
@@ -210,27 +118,42 @@ ui <- page_sidebar(
   )
 )
 
-# Server Definition
 server <- function(input, output, session) {
+  # Reactive values for token and activities
+  token <- reactiveVal(NULL)
   activity_data <- reactiveVal(NULL)
-  status <- reactiveVal("")
+  auth_status <- reactiveVal("")
   
-  observeEvent(input$fetch, {
-    status("Fetching data from Strava...")
-    
+  # Handle authentication
+  observeEvent(input$auth, {
     tryCatch({
-      activities <- stravaEnv$fetch_strava_activities()
+      auth_status("Authenticating with Strava...")
+      token_obj <- strava_oauth(app_name, client_id, client_secret)
+      
+      # Verify token
+      if (is.null(token_obj) || !inherits(token_obj, "Token2.0")) {
+        auth_status("Authentication failed: Invalid token received")
+        return()
+      }
+      
+      token(token_obj)
+      
+      # Fetch activities after successful authentication
+      activities <- fetch_strava_activities(token_obj)
       activity_data(activities)
-      status("Data successfully retrieved!")
+      auth_status("Successfully connected to Strava!")
+      
     }, error = function(e) {
-      status(paste("Error:", conditionMessage(e)))
+      auth_status(paste("Authentication error:", conditionMessage(e)))
     })
   })
   
-  output$status <- renderText({
-    status()
+  # Display authentication status
+  output$auth_status <- renderText({
+    auth_status()
   })
   
+  # Filter activities based on user input
   activities <- reactive({
     req(activity_data())
     
@@ -297,7 +220,7 @@ server <- function(input, output, session) {
           pageLength = 5,
           columnDefs = list(
             list(
-              targets = c(7:12),
+              targets = c(7:12),  # columns for power, HR, and kJ
               render = JS(
                 "function(data, type, row, meta) {
                 return data === null ? 'N/A' : data;
