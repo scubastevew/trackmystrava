@@ -363,3 +363,32 @@ server <- function(input, output, session) {
       )
     )
   })
+
+    output$auth_status <- renderText({
+    auth_status()
+  })
+
+  output$total_distance <- renderText({
+    req(activities())
+    paste(round(sum(activities()$distance), 1), "km")
+  })
+  
+  output$total_activities <- renderText({
+    req(activities())
+    nrow(activities())
+  })
+  
+  output$total_elevation <- renderText({
+    req(activities())
+    paste(round(sum(activities()$elevation), 0), "m")
+  })
+  
+  output$time_series <- renderPlot({
+    req(activities())
+    ggplot(activities(), aes(x = date, y = distance, color = type)) +
+      geom_point() +
+      geom_smooth(method = "loess", se = FALSE) +
+      theme_minimal() +
+      labs(x = "Date", y = "Distance (km)", color = "Activity Type") +
+      theme(legend.position = "bottom")
+  })
