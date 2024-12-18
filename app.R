@@ -15,7 +15,6 @@ client_secret <- Sys.getenv("STRAVA_CLIENT_SECRET")
 strava_oauth <- function(app_name, client_id, client_secret, session) {
   # Get the full URL of the app
   host_url <- session$clientData$url_hostname
-  port <- session$clientData$url_port
   path <- session$clientData$url_pathname
   
   # Construct the redirect URI
@@ -56,7 +55,6 @@ get_token <- function(code, client_id, client_secret, redirect_uri) {
   fromJSON(rawToChar(response$content))
 }
 
-# Rest of your fetch_strava_activities function remains the same
 fetch_strava_activities <- function(access_token) {
   url <- "https://www.strava.com/api/v3/athlete/activities"
   response <- GET(url, 
@@ -91,7 +89,6 @@ fetch_strava_activities <- function(access_token) {
     arrange(desc(date))
 }
 
-# UI remains mostly the same
 ui <- page_sidebar(
   title = "My Strava Dashboard",
   theme = bs_theme(bootswatch = "flatly"),
@@ -99,6 +96,8 @@ ui <- page_sidebar(
   sidebar = sidebar(
     actionButton("auth", "Connect to Strava", class = "btn-primary"),
     verbatimTextOutput("auth_status"),
+    # Add UI element for the authorization link
+    uiOutput("auth_link"),
     selectInput("activity_type", "Activity Type",
                 choices = c("All", "Run", "Ride", "VirtualRide")),
     dateRangeInput("date_range", "Date Range",
@@ -146,12 +145,11 @@ ui <- page_sidebar(
 )
 
 server <- function(input, output, session) {
-  # Reactive values
   access_token <- reactiveVal(NULL)
   activity_data <- reactiveVal(NULL)
   auth_status <- reactiveVal("")
   
-  # Handle authentication
+  # Updated authentication handling
   observeEvent(input$auth, {
     tryCatch({
       auth_status("Initiating Strava authentication...")
@@ -159,21 +157,20 @@ server <- function(input, output, session) {
       # Get OAuth config
       oauth_config <- strava_oauth(app_name, client_id, client_secret, session)
       
-      # Redirect to Strava authorization page
-      showModal(modalDialog(
-        title = "Strava Authorization",
-        "You will be redirected to Strava to authorize the application.",
-        footer = tagList(
-          modalButton("Cancel"),
-          actionButton("confirm_auth", "Continue to Strava")
+      # Create clickable link instead of using browseURL
+      output$auth_link <- renderUI({
+        tags$div(
+          style = "margin-top: 10px;",
+          tags$a(
+            href = oauth_config$auth_url,
+            target = "_blank",
+            class = "btn btn-success btn-sm",
+            "Click here to authorize with Strava"
+          )
         )
-      ))
-      
-      observeEvent(input$confirm_auth, {
-        removeModal()
-        auth_status("Redirecting to Strava...")
-        browseURL(oauth_config$auth_url)
       })
+      
+      auth_status("Please click the authorization link above.")
       
     }, error = function(e) {
       auth_status(paste("Authentication error:", conditionMessage(e)))
@@ -209,7 +206,6 @@ server <- function(input, output, session) {
     }
   })
   
-  # Rest of your server code remains the same
   output$auth_status <- renderText({
     auth_status()
   })
@@ -228,7 +224,6 @@ server <- function(input, output, session) {
     data
   })
   
-  # Your existing outputs remain the same
   output$total_distance <- renderText({
     req(activities())
     paste(round(sum(activities()$distance), 1), "km")
