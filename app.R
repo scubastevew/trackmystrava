@@ -250,6 +250,10 @@ server <- function(input, output, session) {
     data
   })
   
+  output$auth_status <- renderText({
+    auth_status()
+  })
+  
   output$total_distance <- renderText({
     req(activities())
     paste(round(sum(activities()$distance), 1), "km")
@@ -302,7 +306,7 @@ server <- function(input, output, session) {
         )
       )
   })
-  
+
     output$activity_details <- renderUI({
     req(activities(), input$activity_table_rows_selected)
     
@@ -363,8 +367,8 @@ server <- function(input, output, session) {
       )
     )
   })
-
-    output$auth_status <- renderText({
+  
+  output$auth_status <- renderText({
     auth_status()
   })
 
@@ -392,3 +396,6 @@ server <- function(input, output, session) {
       labs(x = "Date", y = "Distance (km)", color = "Activity Type") +
       theme(legend.position = "bottom")
   })
+}
+
+shinyApp(ui, server)
