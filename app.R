@@ -6,7 +6,7 @@ library(DT)
 library(httr)
 library(jsonlite)
 library(leaflet)
-library(polyline)
+library(googlePolylines)
 
 # Strava API credentials
 app_name <- Sys.getenv("STRAVA_APP_NAME")
