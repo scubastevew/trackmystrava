@@ -7,6 +7,7 @@ library(httr)
 library(jsonlite)
 library(leaflet)
 library(googlePolylines)
+library(bsicons)
 
 # Strava API credentials
 app_name <- Sys.getenv("STRAVA_APP_NAME")
@@ -52,6 +53,7 @@ get_token <- function(code, client_id, client_secret, redirect_uri) {
   fromJSON(rawToChar(response$content))
 }
 
+# Function to fetch activity details
 fetch_activity_details <- function(access_token, activity_id) {
   url <- sprintf("https://www.strava.com/api/v3/activities/%s", activity_id)
   
@@ -287,8 +289,8 @@ server <- function(input, output, session) {
         addMarkers(lng = 0, lat = 0, popup = "No route data available"))
     }
     
-    # Decode the polyline
-    coords <- decode_pl(details$map$summary_polyline)
+    # Decode the polyline using googlePolylines
+    coords <- decode(details$map$summary_polyline)[[1]]
     
     # Create the map
     leaflet() %>%
@@ -308,26 +310,7 @@ server <- function(input, output, session) {
       )
   })
 
-    output$auth_status <- renderText({
-    auth_status()
-  })
-  
-  output$total_distance <- renderText({
-    req(activities())
-    paste(round(sum(activities()$distance), 1), "km")
-  })
-  
-  output$total_activities <- renderText({
-    req(activities())
-    nrow(activities())
-  })
-  
-  output$total_elevation <- renderText({
-    req(activities())
-    paste(round(sum(activities()$elevation), 0), "m")
-  })
-  
-  output$activity_table <- renderDT({
+    output$activity_table <- renderDT({
     req(activities())
     activities() %>%
       arrange(desc(date)) %>%
@@ -414,6 +397,25 @@ server <- function(input, output, session) {
         )
       )
     )
+  })
+  
+  output$auth_status <- renderText({
+    auth_status()
+  })
+  
+  output$total_distance <- renderText({
+    req(activities())
+    paste(round(sum(activities()$distance), 1), "km")
+  })
+  
+  output$total_activities <- renderText({
+    req(activities())
+    nrow(activities())
+  })
+  
+  output$total_elevation <- renderText({
+    req(activities())
+    paste(round(sum(activities()$elevation), 0), "m")
   })
 }
 
