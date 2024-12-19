@@ -199,7 +199,7 @@ server <- function(input, output, session) {
         style = "margin-top: 10px;",
         tags$a(
           href = oauth_config$auth_url,
-          target = "_blank",
+          #target = "_blank",
           class = "btn btn-success btn-sm",
           "Click here to authorize with Strava"
         )
